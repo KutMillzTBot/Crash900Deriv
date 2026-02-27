@@ -5,21 +5,62 @@
 <title>Crash900 Multiplier Bot</title>
 
 <script src="https://unpkg.com/@deriv/deriv-api/dist/DerivAPIBasic.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
-body{background:#0f172a;font-family:Arial;color:white;margin:0;}
-.section{padding:15px;border-bottom:1px solid #1e293b;}
-input,select{padding:8px;width:250px;margin:5px 0;background:#1e293b;color:white;border:1px solid #334155;}
-button{padding:10px 20px;background:#22c55e;border:none;color:black;font-weight:bold;cursor:pointer;}
+body{
+    margin:0;
+    font-family:Arial;
+    background:#0f172a;
+    color:white;
+}
+.section{
+    padding:15px;
+    border-bottom:1px solid #1e293b;
+}
+input,select{
+    padding:8px;
+    width:250px;
+    margin:5px 0;
+    background:#1e293b;
+    color:white;
+    border:1px solid #334155;
+}
+button{
+    padding:10px 20px;
+    background:#22c55e;
+    border:none;
+    color:black;
+    font-weight:bold;
+    cursor:pointer;
+}
 button:hover{opacity:0.8;}
-.log-box{background:#111827;padding:10px;height:150px;overflow:auto;font-size:13px;}
-.popup{position:fixed;top:20px;right:20px;background:#22c55e;color:black;padding:10px;display:none;}
-#chartCanvas{height:500px;width:100%;}
+.log-box{
+    background:#111827;
+    padding:10px;
+    height:120px;
+    overflow:auto;
+    font-size:13px;
+}
+.popup{
+    position:fixed;
+    top:20px;
+    right:20px;
+    background:#22c55e;
+    color:black;
+    padding:10px;
+    display:none;
+    z-index:1000;
+}
+iframe{
+    width:100%;
+    height:750px;
+    border:none;
+}
 </style>
 </head>
 <body>
 
+<!-- BOT CONTROLS -->
 <div class="section">
 <h3>Deriv API</h3>
 <input type="text" id="apiToken" placeholder="Enter Deriv API Token"><br>
@@ -60,9 +101,10 @@ Max Trades:<br>
 <div class="log-box" id="log"></div>
 </div>
 
+<!-- REAL DERIV TERMINAL -->
 <div class="section">
-<h3>Crash900 Live Chart (Deriv Feed)</h3>
-<canvas id="chartCanvas"></canvas>
+<h3>Live Deriv Chart Terminal</h3>
+<iframe src="https://app.deriv.com/trader?symbol=CRASH900"></iframe>
 </div>
 
 <script>
@@ -75,19 +117,6 @@ let observationMode=false;
 let activeContractId=null;
 let entryStake=10;
 
-let chart;
-let chartData={
-labels:[],
-datasets:[{
-label:"Crash900",
-data:[],
-borderColor:"#22c55e",
-backgroundColor:"rgba(34,197,94,0.2)",
-fill:true,
-tension:0.1
-}]
-};
-
 function log(msg){
 document.getElementById("log").innerHTML+=msg+"<br>";
 }
@@ -99,52 +128,12 @@ pop.style.display="block";
 setTimeout(()=>{pop.style.display="none";},3000);
 }
 
-function createChart(){
-const ctx=document.getElementById('chartCanvas').getContext('2d');
-chart=new Chart(ctx,{
-type:'line',
-data:chartData,
-options:{
-responsive:true,
-scales:{x:{display:false},y:{beginAtZero:false}}
-}
-});
-}
-
 async function connect(){
 const token=document.getElementById("apiToken").value;
 connection=new WebSocket("wss://ws.derivws.com/websockets/v3?app_id=1089");
 api=new DerivAPIBasic({connection});
 await api.authorize(token);
 log("Connected to Deriv");
-}
-
-async function loadInitialChart(){
-const candles=await api.ticksHistory({
-ticks_history:"CRASH900",
-style:"candles",
-granularity:60,
-count:50
-});
-chartData.labels=candles.candles.map(c=>c.epoch);
-chartData.datasets[0].data=candles.candles.map(c=>c.close);
-chart.update();
-}
-
-async function subscribeLiveChart(){
-await api.ticks({ticks:"CRASH900",subscribe:1});
-connection.addEventListener("message",(event)=>{
-const data=JSON.parse(event.data);
-if(data.tick){
-chartData.labels.push(data.tick.epoch);
-chartData.datasets[0].data.push(data.tick.quote);
-if(chartData.labels.length>100){
-chartData.labels.shift();
-chartData.datasets[0].data.shift();
-}
-chart.update();
-}
-});
 }
 
 async function getCandle(){
@@ -209,6 +198,7 @@ const tpPercent=parseFloat(document.getElementById("takeProfit").value);
 
 connection.addEventListener("message",async(event)=>{
 const data=JSON.parse(event.data);
+
 if(data.proposal_open_contract &&
 data.proposal_open_contract.contract_id===activeContractId){
 
@@ -240,11 +230,6 @@ if(running)return;
 running=true;
 
 await connect();
-
-createChart();
-await loadInitialChart();
-await subscribeLiveChart();
-
 log("Bot Started");
 
 setInterval(async()=>{
