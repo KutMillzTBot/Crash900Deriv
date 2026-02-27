@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Crash900 Multiplier Bot</title>
+
+<script src="https://unpkg.com/@deriv/deriv-api/dist/DerivAPIBasic.js"></script>
+<script src="https://s3.tradingview.com/tv.js"></script>
+
+<style>
+body {
+    background:#0f172a;
+    font-family:Arial;
+    color:white;
+    margin:0;
+}
+.section {
+    padding:15px;
+    border-bottom:1px solid #1e293b;
+}
+input, select {
+    padding:8px;
+    width:250px;
+    margin:5px 0;
+    background:#1e293b;
+    color:white;
+    border:1px solid #334155;
+}
+button {
+    padding:10px 20px;
+    background:#22c55e;
+    border:none;
+    color:black;
+    font-weight:bold;
+    cursor:pointer;
+}
+button:hover { opacity:0.8; }
+#chart { height:500px; }
+.log-box {
+    background:#111827;
+    padding:10px;
+    height:150px;
+    overflow:auto;
+    font-size:13px;
+}
+.popup {
+    position:fixed;
+    top:20px;
+    right:20px;
+    background:#22c55e;
+    color:black;
+    padding:10px;
+    display:none;
+}
+</style>
+</head>
+<body>
+
+<!-- DERIV API SECTION -->
+<div class="section">
+    <h3>Deriv API</h3>
+    <input type="text" id="apiToken" placeholder="Enter Deriv API Token">
+    <br>
+    <button id="startBot">START BOT</button>
+</div>
+
+<!-- TRADE SETTINGS -->
+<div class="section">
+    <h3>Trade Settings</h3>
+    Stake (Ticks Duration):<br>
+    <input type="number" id="duration" value="5"><br>
+    Multiplier:<br>
+    <select id="multiplier">
+        <option value="20">20x</option>
+        <option value="50">50x</option>
+        <option value="100">100x</option>
+        <option value="200">200x</option>
+    </select>
+</div>
+
+<!-- LIVE TRANSACTION POPUP -->
+<div class="popup" id="livePopup"></div>
+
+<!-- TRANSACTION HISTORY -->
+<div class="section">
+    <h3>Transaction History</h3>
+    <div class="log-box" id="history"></div>
+</div>
+
+<!-- SYSTEM LOG -->
+<div class="section">
+    <h3>System Log</h3>
+    <div class="log-box" id="log"></div>
+</div>
+
+<!-- CHART -->
+<div class="section">
+    <h3>Crash900 Chart (M1)</h3>
+    <div id="chart"></div>
+</div>
+
+<script>
+
+let api, connection;
+let rangeArray = [];
+let running = false;
+
+function log(msg){
+    document.getElementById("log").innerHTML += msg + "<br>";
+}
+
+function showPopup(msg){
+    let pop = document.getElementById("livePopup");
+    pop.innerHTML = msg;
+    pop.style.display = "block";
+    setTimeout(()=>{ pop.style.display="none"; },3000);
+}
+
+async function connect(){
+    const token = document.getElementById("apiToken").value;
+    connection = new WebSocket("wss://ws.derivws.com/websockets/v3?app_id=1089");
+    api = new DerivAPIBasic({ connection });
+
+    await api.authorize(token);
+    log("Connected to Deriv");
+}
+
+async function getCandle(){
+    const candles = await api.ticksHistory({
+        ticks_history: "CRASH900",
+        style: "candles",
+        granularity: 60,
+        count: 50
+    });
+    return candles.candles;
+}
+
+function calculateSpike(candles){
+    let last = candles[candles.length-1];
+    let range = last.high - last.low;
+
+    rangeArray.push(range);
+    if(rangeArray.length > 30) rangeArray.shift();
+
+    let avg = rangeArray.reduce((a,b)=>a+b,0)/rangeArray.length;
+
+    return (range > avg * 2.5) && (last.close < last.open);
+}
+
+async function buyTrade(){
+    const duration = document.getElementById("duration").value;
+    const multiplier = document.getElementById("multiplier").value;
+
+    const proposal = await api.proposal({
+        proposal:1,
+        amount:10,
+        basis:"stake",
+        contract_type:"MULTUP",
+        currency:"USD",
+        duration:duration,
+        duration_unit:"t",
+        symbol:"CRASH900",
+        multiplier: multiplier
+    });
+
+    const buy = await api.buy({ buy: proposal.proposal.id, price:10 });
+
+    log("BUY EXECUTED ID: "+buy.buy.contract_id);
+    document.getElementById("history").innerHTML +=
+        "BUY ID: "+buy.buy.contract_id+"<br>";
+    showPopup("BUY EXECUTED");
+}
+
+async function startBot(){
+    if(running) return;
+    running = true;
+
+    await connect();
+
+    setInterval(async ()=>{
+        const candles = await getCandle();
+        if(calculateSpike(candles)){
+            log("Spike detected → BUY");
+            await buyTrade();
+        }
+    },60000);
+}
+
+document.getElementById("startBot").onclick = startBot;
+
+/* TradingView Style Chart */
+new TradingView.widget({
+    "container_id": "chart",
+    "symbol": "DERIV:CRASH900",
+    "interval": "1",
+    "theme": "dark",
+    "style": "1",
+    "locale": "en",
+    "toolbar_bg": "#0f172a",
+    "hide_top_toolbar": false,
+    "save_image": false
+});
+
+</script>
+
+</body>
+</html>
